@@ -22,6 +22,7 @@
       - uidmap          # newuidmap/newgidmap, required for the user namespace
       - slirp4netns     # rootless network namespace
       - dbus-user-session
+      - python3-debian  # deb822_repository below
     state: present
     update_cache: true
     cache_valid_time: 3600
@@ -187,7 +188,8 @@
   become: true
   become_user: "{{ docker_service_user }}"
   environment: "{{ docker_user_env }}"
-  ansible.builtin.command: /usr/bin/dockerd-rootless-setuptool.sh install
+  ansible.builtin.command:
+    argv: "{{ ['/usr/bin/dockerd-rootless-setuptool.sh', 'install'] + docker_setuptool_args }}"
   args:
     creates: "{{ docker_service_home }}/.config/systemd/user/docker.service"
 

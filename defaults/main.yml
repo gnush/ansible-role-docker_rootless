@@ -30,6 +30,11 @@ docker_packages:
 # Contents of ~/.config/docker/daemon.json for the service user.
 docker_daemon_config: {}
 
+# Extra arguments for `dockerd-rootless-setuptool.sh install`. Tests pass
+# --skip-iptables: the setuptool checks /lib/modules for nf_tables, which a
+# container does not have.
+docker_setuptool_args: []
+
 # Environment every command run *as the service user* needs so that it talks to
 # the per-user systemd manager and the rootless daemon socket.
 docker_user_runtime_dir: "/run/user/{{ docker_service_uid }}"
