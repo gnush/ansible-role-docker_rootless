@@ -16,9 +16,7 @@ docker_unprivileged_port_start: 0
 docker_apt_repo_url: https://download.docker.com/linux/ubuntu
 docker_apt_key_url: https://download.docker.com/linux/ubuntu/gpg
 
-# `latest` keeps the hosts on the current Docker CE release.
-# Set it to `present` to freeze a host at whatever it already has.
-# present does not prevent updates from other sources
+# `latest` upgrades a host on every run; `present` freezes it. See README.md.
 docker_packages_state: latest
 
 docker_packages:

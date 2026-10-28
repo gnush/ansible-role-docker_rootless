@@ -63,6 +63,7 @@
     state: "{{ docker_packages_state }}"
     update_cache: true
 
+# Feeds the check that the running daemon predates the installed packages.
 - name: Read the installed Docker version
   ansible.builtin.command: docker --version
   register: docker_cli_version_out

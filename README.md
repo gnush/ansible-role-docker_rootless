@@ -1,0 +1,117 @@
+# Rootless Docker Ansible Role
+
+Installs Docker CE from the upstream apt repository and runs it **rootless**: the
+system-wide daemon is stopped and disabled, and an unprivileged user runs its own
+daemon as a systemd user unit.
+
+## Requirements
+
+- Ubuntu 22.04 or 24.04 (the role refuses anything else)
+- `x86_64`, `aarch64`, `armv7l`, `ppc64le` or `s390x` — the architectures Docker
+  publishes an apt repository for
+- Ansible >= 2.15 (`deb822_repository`)
+- `ansible.posix` collection (sysctl)
+- Root privileges (`become: true`)
+
+## Role Variables
+
+Defined in `defaults/main.yml`:
+
+| Variable | Default | |
+|---|---|---|
+| `docker_service_user` | `service` | user the rootless daemon runs as |
+| `docker_service_group` | `service` | |
+| `docker_service_uid` / `_gid` | `1001` | |
+| `docker_service_home` | `/home/{{ docker_service_user }}` | |
+| `docker_service_shell` | `/bin/bash` | |
+| `docker_subid_start` | `165536` | first id of the subordinate range |
+| `docker_subid_count` | `65536` | |
+| `docker_unprivileged_port_start` | `0` | lowest port the daemon may publish; `0` allows 80/443 |
+| `docker_apt_repo_url` | `https://download.docker.com/linux/ubuntu` | |
+| `docker_apt_key_url` | `https://download.docker.com/linux/ubuntu/gpg` | |
+| `docker_packages_state` | `latest` | `latest` or `present`, see below |
+| `docker_packages` | `docker-ce`, `-cli`, `-rootless-extras`, `containerd.io`, `-buildx-plugin`, `-compose-plugin` | |
+| `docker_daemon_config` | `{}` | contents of the service user's `~/.config/docker/daemon.json` |
+| `docker_user_runtime_dir` | `/run/user/{{ docker_service_uid }}` | |
+| `docker_user_env` | derived | environment for commands run as the service user |
+
+The role keeps the `docker_*` prefix rather than `docker_rootless_*`: the vocabulary
+is shared with a runner role that mounts this daemon's socket, and prefixing it per
+role would break the one thing they have in common.
+
+`docker_user_env` is used as `environment:` on every task that talks to the per-user
+systemd manager. Overriding it without `XDG_RUNTIME_DIR` and `DBUS_SESSION_BUS_ADDRESS`
+makes those tasks fail at connection, not at validation.
+
+## Example Playbook
+
+```yaml
+- hosts: docker
+  become: true
+  roles:
+    - role: docker_rootless
+      docker_daemon_config:
+        default-address-pools:
+          - base: 172.26.128.0/17
+            size: 24
+```
+
+A consumer that adds a runtime (GPU hosts, for example) passes it through
+`docker_daemon_config`; this role is the only writer of `daemon.json`.
+
+## Docker package upgrades
+
+`docker_packages_state` defaults to `latest`, so **a run upgrades Docker CE**. Set it
+to `present` to freeze a host where it is.
+
+An upgrade replaces the `dockerd` binary on disk but does not restart the daemon —
+that would stop every container on the host, including whatever is published on it.
+The role therefore reports the mismatch and leaves the restart to a maintenance
+window:
+
+```
+Docker CE is now 29.x, but the rootless daemon is still running 27.y ...
+```
+
+Run as the service user:
+
+```sh
+sudo -iu service
+systemctl --user restart docker
+```
+
+A frozen host (`present`) still reports this drift, because the check compares the
+running daemon to the installed binary rather than watching for a change. A warning
+on a frozen host is not a broken run.
+
+## Usage on the host
+
+The daemon listens only on the service user's socket:
+
+```sh
+sudo -iu service
+docker ps
+```
+
+No `DOCKER_HOST` is needed: `dockerd-rootless-setuptool.sh` creates a `rootless`
+docker context pointing at `unix:///run/user/<uid>/docker.sock`.
+
+The role exports `XDG_RUNTIME_DIR` from the service user's `.bashrc` because
+`sudo -iu` gives a login shell but not a login session, and without it
+`systemctl --user` fails with `Failed to connect to bus: No medium found`.
+
+## Ubuntu 24.04 note
+
+24.04 sets `kernel.apparmor_restrict_unprivileged_userns=1`, which prevents
+`rootlesskit` from creating its user namespace. The role installs
+`/etc/apparmor.d/usr.bin.rootlesskit` when that sysctl exists; 22.04 does not need it.
+
+## Known limitations of rootless mode
+
+- No `--privileged`, no AppArmor profiles on containers, no arbitrary `--cap-add`
+  beyond what the user namespace governs.
+- Resource limits need cgroup v2 and systemd.
+- The `IPAddress` in `docker inspect` is inside the rootlesskit network namespace and
+  is not reachable from the host without `nsenter`.
+- `docker run -p` does not preserve the client source address by default. See
+  `TODO.md` for the port-driver options and what each costs.
