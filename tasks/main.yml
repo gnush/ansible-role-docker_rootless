@@ -4,6 +4,11 @@
     that: ansible_facts['distribution'] == 'Ubuntu'
     fail_msg: "This role only supports Ubuntu (found {{ ansible_facts['distribution'] }})."
 
+- name: Fail on unsupported architecture
+  ansible.builtin.assert:
+    that: ansible_facts['architecture'] in docker_apt_arch_map
+    fail_msg: "No Docker apt repository for {{ ansible_facts['architecture'] }}."
+
 # --------------------------------------------------------------------------
 # Packages
 # --------------------------------------------------------------------------
@@ -47,7 +52,7 @@
     uris: "{{ docker_apt_repo_url }}"
     suites: ["{{ ansible_facts['distribution_release'] }}"]
     components: [stable]
-    architectures: ["{{ docker_apt_arch }}"]
+    architectures: ["{{ docker_apt_arch_map[ansible_facts['architecture']] }}"]
     signed_by: /etc/apt/keyrings/docker.asc
     enabled: true
     state: present
