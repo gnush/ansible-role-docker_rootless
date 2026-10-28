@@ -1,0 +1,80 @@
+---
+- name: Verify
+  hosts: all
+  vars_files:
+    - "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/defaults/main.yml"
+  tasks:
+    - name: Populate service facts
+      ansible.builtin.service_facts:
+
+    # A unit that was never loaded is absent from service_facts rather than stopped.
+    - name: Check the system-wide daemon is off
+      ansible.builtin.assert:
+        that:
+          - (ansible_facts.services['docker.service'] | default({})).get('status') != 'enabled'
+          - (ansible_facts.services['docker.service'] | default({})).get('state') != 'running'
+
+    # Each of these is run as the service user: the socket and the user manager
+    # only exist inside the service user's session.
+    - name: Read the rootless daemon state
+      become: true
+      become_user: "{{ docker_service_user }}"
+      environment: "{{ docker_user_env }}"
+      ansible.builtin.systemd_service:
+        name: docker.service
+        scope: user
+      register: docker_user_unit
+      changed_when: false
+      check_mode: false
+
+    - name: Assert the rootless daemon is running and enabled
+      ansible.builtin.assert:
+        that:
+          - docker_user_unit.status.ActiveState == 'active'
+          - docker_user_unit.status.UnitFileState == 'enabled'
+
+    - name: Check the daemon reports itself rootless
+      become: true
+      become_user: "{{ docker_service_user }}"
+      environment: "{{ docker_user_env }}"
+      ansible.builtin.command: docker info --format '{% raw %}{{ .SecurityOptions }}{% endraw %}'
+      register: docker_info
+      changed_when: false
+      failed_when: docker_info.stdout is not search('rootless')
+
+    - name: Check the socket is owned by the service user
+      ansible.builtin.stat:
+        path: "{{ docker_user_runtime_dir }}/docker.sock"
+      register: docker_sock
+
+    - name: Assert the socket belongs to the service user
+      ansible.builtin.assert:
+        that:
+          - docker_sock.stat.exists
+          - docker_sock.stat.uid == docker_service_uid
+
+    - name: Pull and run a container as the service user
+      become: true
+      become_user: "{{ docker_service_user }}"
+      environment: "{{ docker_user_env }}"
+      ansible.builtin.command: docker run --rm hello-world
+      register: docker_run
+      changed_when: false
+
+    - name: Assert the container ran
+      ansible.builtin.assert:
+        that: "'Hello from Docker' in docker_run.stdout"
+
+    # getsubids only ships with uidmap >= 1:4.9 (24.04 and later); 22.04 has
+    # no such binary, so read the files on both.
+    - name: Read the subordinate id ranges
+      ansible.builtin.command: "grep -E '^{{ docker_service_user }}:' /etc/{{ item }}"
+      loop:
+        - subuid
+        - subgid
+      register: docker_subid
+      changed_when: false
+
+    - name: Assert the service user has subordinate ids
+      ansible.builtin.assert:
+        that: docker_subid.results | map(attribute='stdout') | map('trim') | map('length') | min > 0

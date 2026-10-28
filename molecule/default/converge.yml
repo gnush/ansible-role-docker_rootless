@@ -1,0 +1,29 @@
+---
+- name: Converge
+  hosts: all
+  vars:
+    # Nested overlay on overlay fails; vfs is the only driver that works here.
+    docker_daemon_config:
+      storage-driver: vfs
+    # setuptool checks /lib/modules for nf_tables; a container has none.
+    docker_setuptool_args: [--skip-iptables]
+  pre_tasks:
+    # Rootless dockerd hardcodes /sys/fs/cgroup/user.slice, but under
+    # cgroupns_mode: host this container's user.slice lives under
+    # /sys/fs/cgroup/docker/<id>/. Bind it over the path dockerd reads.
+    # Upstream moby/moby#53531, fixed but unreleased.
+    - name: Bind the nested user.slice over the path dockerd reads
+      ansible.builtin.shell: |
+        set -euo pipefail
+        nest="/sys/fs/cgroup$(sed -n 's/^0::\(.*\)\/init.scope/\1/p' /proc/1/cgroup)/user.slice"
+        mkdir -p /tmp/user-slice
+        mount --bind "$nest" /tmp/user-slice
+        mount --bind /tmp/user-slice /sys/fs/cgroup/user.slice
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+  tasks:
+    - name: Apply role
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
