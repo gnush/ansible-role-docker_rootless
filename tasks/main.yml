@@ -1,0 +1,257 @@
+---
+- name: Fail on unsupported distribution
+  ansible.builtin.assert:
+    that: ansible_facts['distribution'] == 'Ubuntu'
+    fail_msg: "This role only supports Ubuntu (found {{ ansible_facts['distribution'] }})."
+
+# --------------------------------------------------------------------------
+# Packages
+# --------------------------------------------------------------------------
+
+- name: Install prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - uidmap          # newuidmap/newgidmap, required for the user namespace
+      - slirp4netns     # rootless network namespace
+      - dbus-user-session
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create apt keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Install Docker apt signing key
+  ansible.builtin.get_url:
+    url: "{{ docker_apt_key_url }}"
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+# The role owns Docker's apt source.
+# The legacy one-line list is removed so the source is not duplicated
+- name: Remove the legacy one-line Docker apt source
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/docker.list
+    state: absent
+
+- name: Add Docker apt repository
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: [deb]
+    uris: "{{ docker_apt_repo_url }}"
+    suites: ["{{ ansible_facts['distribution_release'] }}"]
+    components: [stable]
+    architectures: ["{{ docker_apt_arch }}"]
+    signed_by: /etc/apt/keyrings/docker.asc
+    enabled: true
+    state: present
+
+- name: Install Docker packages
+  ansible.builtin.apt:
+    name: "{{ docker_packages }}"
+    state: "{{ docker_packages_state }}"
+    update_cache: true
+
+# The installed CLI version is what the GitLab runner's default job image should
+# match, so record it even when nothing was upgraded.
+- name: Read the installed Docker version
+  ansible.builtin.command: docker --version
+  register: docker_cli_version_out
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Record the installed Docker version
+  ansible.builtin.set_fact:
+    docker_installed_version: "{{ docker_cli_version_out.stdout | default('') | regex_search('\\d+\\.\\d+\\.\\d+') | default('', true) }}"
+
+# --------------------------------------------------------------------------
+# The system-wide daemon stays off — everything runs rootless.
+# --------------------------------------------------------------------------
+
+- name: Disable the system-wide Docker daemon
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop:
+    - docker.service
+    - docker.socket
+
+# --------------------------------------------------------------------------
+# Service user
+# --------------------------------------------------------------------------
+
+- name: Create service group
+  ansible.builtin.group:
+    name: "{{ docker_service_group }}"
+    gid: "{{ docker_service_gid }}"
+    state: present
+
+- name: Create service user
+  ansible.builtin.user:
+    name: "{{ docker_service_user }}"
+    uid: "{{ docker_service_uid }}"
+    group: "{{ docker_service_group }}"
+    home: "{{ docker_service_home }}"
+    shell: "{{ docker_service_shell }}"
+    create_home: true
+    state: present
+
+# `sudo -iu service` starts a login shell but not a login session, so nothing
+# sets XDG_RUNTIME_DIR and `systemctl --user` cannot find the per-user bus.
+- name: Point interactive shells at the per-user runtime directory
+  ansible.builtin.blockinfile:
+    path: "{{ docker_service_home }}/.bashrc"
+    block: |
+      export XDG_RUNTIME_DIR={{ docker_user_runtime_dir }}
+    marker: "# {mark} ANSIBLE MANAGED: rootless docker"
+    create: true
+    owner: "{{ docker_service_user }}"
+    group: "{{ docker_service_group }}"
+    mode: "0644"
+
+- name: Assign subordinate uid/gid range
+  ansible.builtin.lineinfile:
+    path: "/etc/{{ item }}"
+    regexp: "^{{ docker_service_user }}:"
+    line: "{{ docker_service_user }}:{{ docker_subid_start }}:{{ docker_subid_count }}"
+    create: true
+    mode: "0644"
+  loop:
+    - subuid
+    - subgid
+
+- name: Enable lingering so the daemon starts at boot without a login
+  ansible.builtin.command: "loginctl enable-linger {{ docker_service_user }}"
+  args:
+    creates: "/var/lib/systemd/linger/{{ docker_service_user }}"
+
+- name: Wait for the per-user runtime directory
+  ansible.builtin.wait_for:
+    path: "{{ docker_user_runtime_dir }}"
+    timeout: 30
+
+# --------------------------------------------------------------------------
+# Kernel / AppArmor prerequisites for unprivileged user namespaces
+# --------------------------------------------------------------------------
+
+- name: Allow the rootless daemon to bind privileged ports
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_unprivileged_port_start
+    value: "{{ docker_unprivileged_port_start }}"
+    sysctl_file: /etc/sysctl.d/50-unprivileged-ports.conf
+    sysctl_set: true
+    reload: true
+
+- name: Check whether AppArmor restricts unprivileged user namespaces
+  ansible.builtin.stat:
+    path: /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+  register: docker_userns_restrict
+
+# Ubuntu 24.04+ confines unprivileged user namespaces. Without this profile
+# rootlesskit cannot create its namespace and dockerd never starts.
+- name: Allow rootlesskit to create user namespaces (AppArmor)
+  ansible.builtin.copy:
+    dest: /etc/apparmor.d/usr.bin.rootlesskit
+    mode: "0644"
+    content: |
+      abi <abi/4.0>,
+      include <tunables/global>
+
+      /usr/bin/rootlesskit flags=(unconfined) {
+        userns,
+        include if exists <local/usr.bin.rootlesskit>
+      }
+  when: docker_userns_restrict.stat.exists
+  notify: Restart apparmor
+
+- name: Apply pending AppArmor changes before starting the daemon
+  ansible.builtin.meta: flush_handlers
+
+# --------------------------------------------------------------------------
+# Rootless daemon
+# --------------------------------------------------------------------------
+
+- name: Install the rootless systemd user unit
+  become: true
+  become_user: "{{ docker_service_user }}"
+  environment: "{{ docker_user_env }}"
+  ansible.builtin.command: /usr/bin/dockerd-rootless-setuptool.sh install
+  args:
+    creates: "{{ docker_service_home }}/.config/systemd/user/docker.service"
+
+- name: Create the rootless daemon config directory
+  ansible.builtin.file:
+    path: "{{ docker_service_home }}/.config/docker"
+    state: directory
+    owner: "{{ docker_service_user }}"
+    group: "{{ docker_service_group }}"
+    mode: "0755"
+
+- name: Write the rootless daemon.json
+  ansible.builtin.copy:
+    dest: "{{ docker_service_home }}/.config/docker/daemon.json"
+    content: "{{ docker_daemon_config | to_nice_json(indent=4) }}\n"
+    owner: "{{ docker_service_user }}"
+    group: "{{ docker_service_group }}"
+    mode: "0664"
+  notify: Restart rootless docker
+
+- name: Enable and start the rootless daemon
+  become: true
+  become_user: "{{ docker_service_user }}"
+  environment: "{{ docker_user_env }}"
+  ansible.builtin.systemd_service:
+    name: docker.service
+    scope: user
+    enabled: true
+    state: started
+
+- name: Apply pending daemon restarts
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify the rootless daemon
+  become: true
+  become_user: "{{ docker_service_user }}"
+  environment: "{{ docker_user_env }}"
+  ansible.builtin.command: docker info --format '{% raw %}{{ .SecurityOptions }}{% endraw %}'
+  register: docker_info_out
+  changed_when: false
+  check_mode: false
+
+- name: Assert the daemon really is rootless
+  ansible.builtin.assert:
+    that: "'rootless' in docker_info_out.stdout"
+    fail_msg: "Docker is running, but not in rootless mode: {{ docker_info_out.stdout }}"
+
+# An apt upgrade replaces the dockerd binary on disk but leaves the running daemon on the old one.
+# Restarting it is deliberately NOT automatic: it stops every container on the host.
+- name: Read the running daemon version
+  become: true
+  become_user: "{{ docker_service_user }}"
+  environment: "{{ docker_user_env }}"
+  ansible.builtin.command: docker version --format '{% raw %}{{ .Server.Version }}{% endraw %}'
+  register: docker_server_version_out
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Warn when the running daemon predates the installed packages
+  ansible.builtin.debug:
+    msg: >-
+      Docker CE is now {{ docker_installed_version }}, but the rootless daemon is
+      still running {{ docker_server_version_out.stdout | trim }} from the
+      replaced binary. Pick a maintenance window and run
+      `systemctl --user restart docker` as {{ docker_service_user }} — it stops
+      every container on this host.
+  when:
+    - docker_installed_version | length > 0
+    - docker_server_version_out.stdout | default('') | trim | length > 0
+    - docker_server_version_out.stdout | trim != docker_installed_version

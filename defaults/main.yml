@@ -1,0 +1,33 @@
+---
+docker_service_user: service
+docker_service_group: service
+docker_service_uid: 1001
+docker_service_gid: 1001
+docker_service_home: "/home/{{ docker_service_user }}"
+docker_service_shell: /bin/bash
+
+# Subordinate uid/gid range handed to the user namespace
+docker_subid_start: 165536
+docker_subid_count: 65536
+
+# First (transport) port the rootless daemon can publish
+docker_unprivileged_port_start: 0
+
+docker_apt_repo_url: https://download.docker.com/linux/ubuntu
+docker_apt_key_url: https://download.docker.com/linux/ubuntu/gpg
+
+# `latest` keeps the hosts on the current Docker CE release.
+# Set it to `present` to freeze a host at whatever it already has.
+# present does not prevent updates from other sources
+docker_packages_state: latest
+
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - docker-ce-rootless-extras
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+# Contents of ~/.config/docker/daemon.json for the service user.
+docker_daemon_config: {}

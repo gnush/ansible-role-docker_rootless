@@ -1,0 +1,14 @@
+---
+- name: Restart apparmor
+  ansible.builtin.systemd_service:
+    name: apparmor.service
+    state: restarted
+
+- name: Restart rootless docker
+  become: true
+  become_user: "{{ docker_service_user }}"
+  environment: "{{ docker_user_env }}"
+  ansible.builtin.systemd_service:
+    name: docker.service
+    scope: user
+    state: restarted
