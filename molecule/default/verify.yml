@@ -65,8 +65,8 @@
       ansible.builtin.assert:
         that: "'Hello from Docker' in docker_run.stdout"
 
-    # getsubids only ships with uidmap >= 1:4.9 (24.04 and later); 22.04 has
-    # no such binary, so read the files on both.
+    # getsubids ships with uidmap >= 1:4.9, which 24.04 has; reading the files
+    # works on any release.
     - name: Read the subordinate id ranges
       ansible.builtin.command: "grep -E '^{{ docker_service_user }}:' /etc/{{ item }}"
       loop:

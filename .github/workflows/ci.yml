@@ -28,8 +28,8 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - ubuntu2204
           - ubuntu2404
+          - ubuntu2604
     steps:
       - uses: actions/checkout@v7
 

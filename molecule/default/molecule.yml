@@ -3,14 +3,6 @@ driver:
   name: docker
 
 platforms:
-  - name: ubuntu2204
-    image: geerlingguy/docker-ubuntu2204-ansible
-    command: /lib/systemd/systemd
-    privileged: true
-    cgroupns_mode: host
-    volumes:
-      - /sys/fs/cgroup:/sys/fs/cgroup:rw
-    pre_build_image: true
   - name: ubuntu2404
     image: geerlingguy/docker-ubuntu2404-ansible
     command: /lib/systemd/systemd
@@ -18,6 +10,18 @@ platforms:
     cgroupns_mode: host
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      # not mounted in a container, so apparmor.service fails its
+      # AssertPathIsReadWrite and the role's userns profile cannot load
+      - /sys/kernel/security:/sys/kernel/security:rw
+    pre_build_image: true
+  - name: ubuntu2604
+    image: geerlingguy/docker-ubuntu2604-ansible
+    command: /lib/systemd/systemd
+    privileged: true
+    cgroupns_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - /sys/kernel/security:/sys/kernel/security:rw
     pre_build_image: true
 
 provisioner:

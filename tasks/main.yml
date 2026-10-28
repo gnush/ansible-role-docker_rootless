@@ -155,13 +155,21 @@
     sysctl_set: true
     reload: true
 
-- name: Check whether AppArmor restricts unprivileged user namespaces
-  ansible.builtin.stat:
-    path: /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+- name: Read the AppArmor restriction on unprivileged user namespaces
+  ansible.builtin.slurp:
+    src: /proc/sys/kernel/apparmor_restrict_unprivileged_userns
   register: docker_userns_restrict
+  failed_when: false
+
+- name: Check the AppArmor ABI the profile is written against
+  ansible.builtin.stat:
+    path: /etc/apparmor.d/abi/4.0
+  register: docker_apparmor_abi
 
 # Ubuntu 24.04+ confines unprivileged user namespaces. Without this profile
 # rootlesskit cannot create its namespace and dockerd never starts.
+# The `userns` rule and abi/4.0 need AppArmor >= 4.0, which docker-ce pulls in
+# on 24.04+; a host with an older AppArmor could not parse the profile.
 - name: Allow rootlesskit to create user namespaces (AppArmor)
   ansible.builtin.copy:
     dest: /etc/apparmor.d/usr.bin.rootlesskit
@@ -174,7 +182,9 @@
         userns,
         include if exists <local/usr.bin.rootlesskit>
       }
-  when: docker_userns_restrict.stat.exists
+  when:
+    - docker_userns_restrict.content | default('') | b64decode | trim == '1'
+    - docker_apparmor_abi.stat.exists
   notify: Restart apparmor
 
 - name: Apply pending AppArmor changes before starting the daemon
