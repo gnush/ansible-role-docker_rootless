@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: docker_rootless
+  namespace: gnush
+  author: gnush
+  description: Rootless Docker CE on Ubuntu — service user, subuid range, per-user daemon.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags:
+    - docker
+    - rootless
+    - containers
+...
