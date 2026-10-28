@@ -58,8 +58,6 @@
     state: "{{ docker_packages_state }}"
     update_cache: true
 
-# The installed CLI version is what the GitLab runner's default job image should
-# match, so record it even when nothing was upgraded.
 - name: Read the installed Docker version
   ansible.builtin.command: docker --version
   register: docker_cli_version_out
