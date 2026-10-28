@@ -6,7 +6,7 @@ daemon as a systemd user unit.
 
 ## Requirements
 
-- Ubuntu 22.04 or 24.04 (the role refuses anything else)
+- Ubuntu >= 24.04
 - `x86_64`, `aarch64`, `armv7l`, `ppc64le` or `s390x` — the architectures Docker
   publishes an apt repository for
 - Ansible >= 2.15 (`deb822_repository`)
@@ -32,6 +32,7 @@ Defined in `defaults/main.yml`:
 | `docker_packages_state` | `latest` | `latest` or `present`, see below |
 | `docker_packages` | `docker-ce`, `-cli`, `-rootless-extras`, `containerd.io`, `-buildx-plugin`, `-compose-plugin` | |
 | `docker_daemon_config` | `{}` | contents of the service user's `~/.config/docker/daemon.json` |
+| `docker_setuptool_args` | `[]` | extra arguments for `dockerd-rootless-setuptool.sh install` |
 | `docker_user_runtime_dir` | `/run/user/{{ docker_service_uid }}` | |
 | `docker_user_env` | derived | environment for commands run as the service user |
 
@@ -100,11 +101,32 @@ The role exports `XDG_RUNTIME_DIR` from the service user's `.bashrc` because
 `sudo -iu` gives a login shell but not a login session, and without it
 `systemctl --user` fails with `Failed to connect to bus: No medium found`.
 
-## Ubuntu 24.04 note
+## AppArmor note
 
-24.04 sets `kernel.apparmor_restrict_unprivileged_userns=1`, which prevents
+24.04 and later set `kernel.apparmor_restrict_unprivileged_userns=1`, which prevents
 `rootlesskit` from creating its user namespace. The role installs
-`/etc/apparmor.d/usr.bin.rootlesskit` when that sysctl exists; 22.04 does not need it.
+`/etc/apparmor.d/usr.bin.rootlesskit` when that sysctl is `1` and the host's AppArmor
+provides `abi/4.0` — the `userns` rule does not exist in 3.0.
+
+## Tests
+
+`molecule test` runs on Ubuntu 24.04 and 26.04 in a privileged container with
+`cgroupns_mode: host`. Four things in the scenario exist only because the target is
+a container, not a host:
+
+- a bind mount of the container's nested `user.slice` over `/sys/fs/cgroup/user.slice`.
+  Rootless `dockerd` hardcodes that path, but under `cgroupns_mode: host` systemd puts
+  `user.slice` under `/sys/fs/cgroup/docker/<id>/`. Upstream issue
+  [moby/moby#53531](https://github.com/moby/moby/issues/53531); the fix is unreleased.
+- `storage-driver: vfs`. The container's `/home` is itself overlayfs, so a nested
+  overlay driver (or `fuse-overlayfs`) fails at `docker run`.
+- `docker_setuptool_args: [--skip-iptables]`. The setuptool probes `/lib/modules` for
+  `nf_tables`, which a container does not have.
+- `/sys/kernel/security` mounted, so `apparmor.service` clears its
+  `AssertPathIsReadWrite` and the `userns` profile can load. Without it the AppArmor
+  branch fails on the handler.
+
+None of these apply to a real host; they are not role defaults.
 
 ## Known limitations of rootless mode
 
