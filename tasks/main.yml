@@ -125,6 +125,32 @@
   ansible.builtin.set_fact:
     docker_service_uid: "{{ docker_service_user_result.uid }}"
 
+# useradd creates the account without a subordinate range when it cannot allocate
+# one, and the setuptool then only prints instructions, so the run would go on to
+# install a daemon that cannot start. Match the uid form too: useradd may write
+# the numeric id instead of the name.
+- name: Read the service user's subordinate id ranges
+  ansible.builtin.command: "grep -E '^{{ docker_service_user }}:|^{{ docker_service_uid }}:' /etc/{{ item }}"
+  loop:
+    - subuid
+    - subgid
+  register: docker_subid
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  # A dry run creates no user, so there is nothing to read.
+  when: not ansible_check_mode
+
+- name: Fail when the service user has no subordinate id range
+  ansible.builtin.assert:
+    that: docker_subid.results | map(attribute='stdout') | map('trim') | map('length') | min > 0
+    when: not ansible_check_mode
+    fail_msg: >-
+      {{ docker_service_user }} has no subordinate id range in /etc/subuid and
+      /etc/subgid, so rootlesskit cannot create its user namespace. Allocate one
+      with `usermod --add-subuids 100000-165535 --add-subgids 100000-165535
+      {{ docker_service_user }}`.
+
 # `sudo -iu service` starts a login shell but not a login session, so nothing
 # sets XDG_RUNTIME_DIR and `systemctl --user` cannot find the per-user bus.
 - name: Point interactive shells at the per-user runtime directory
