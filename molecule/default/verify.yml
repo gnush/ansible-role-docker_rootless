@@ -7,6 +7,33 @@
     - name: Populate service facts
       ansible.builtin.service_facts:
 
+    # The host kernel is already permissive, so a working daemon does not prove
+    # the role's userns branch ran. Check what it wrote instead.
+    - name: Read the AppArmor restriction on unprivileged user namespaces
+      ansible.builtin.slurp:
+        src: /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+      register: userns_restrict
+      failed_when: false
+
+    - name: Stat the user namespace artefacts
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/apparmor.d/usr.bin.rootlesskit
+        - /etc/sysctl.d/50-unprivileged-userns.conf
+      register: userns_files
+      changed_when: false
+
+    - name: Assert the AppArmor branch wrote the rootlesskit profile
+      ansible.builtin.assert:
+        that: userns_files.results[0].stat.exists
+      when: userns_restrict.content | default('') | b64decode | trim == '1'
+
+    - name: Assert the sysctl branch wrote the unprivileged userns settings
+      ansible.builtin.assert:
+        that: userns_files.results[1].stat.exists
+      when: userns_restrict.content | default('') | b64decode | trim != '1'
+
     # A unit that was never loaded is absent from service_facts rather than stopped.
     - name: Check the system-wide daemon is off
       ansible.builtin.assert:

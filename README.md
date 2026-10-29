@@ -112,9 +112,9 @@ present, `kernel.unprivileged_userns_clone=1`.
 
 ## Tests
 
-`molecule test` runs on Ubuntu 24.04 and 26.04 in a privileged container with
-`cgroupns_mode: host`. Four things in the scenario exist only because the target is
-a container, not a host:
+`molecule test` runs on Ubuntu 24.04 and 26.04 and Debian 12 and 13 in a privileged
+container with `cgroupns_mode: host`. Four things in the scenario exist only because
+the target is a container, not a host:
 
 - a bind mount of the container's nested `user.slice` over `/sys/fs/cgroup/user.slice`.
   Rootless `dockerd` hardcodes that path, but under `cgroupns_mode: host` systemd puts
@@ -124,9 +124,10 @@ a container, not a host:
   overlay driver (or `fuse-overlayfs`) fails at `docker run`.
 - `docker_setuptool_args: [--skip-iptables]`. The setuptool probes `/lib/modules` for
   `nf_tables`, which a container does not have.
-- `/sys/kernel/security` mounted, so `apparmor.service` clears its
-  `AssertPathIsReadWrite` and the `userns` profile can load. Without it the AppArmor
-  branch fails on the handler.
+- `/sys/kernel/security` mounted on the Ubuntu platforms only, so `apparmor.service`
+  clears its `AssertPathIsReadWrite` and the `userns` profile can load. Without it the
+  AppArmor branch fails on the handler. Debian takes the sysctl branch and never
+  restarts apparmor.
 
 None of these apply to a real host; they are not role defaults.
 
