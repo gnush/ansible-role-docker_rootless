@@ -104,16 +104,57 @@
       ansible.builtin.assert:
         that: "'Hello from Docker' in docker_run.stdout"
 
-    # getsubids ships with uidmap >= 1:4.9, which 24.04 has; reading the files
-    # works on any release.
-    - name: Read the subordinate id ranges
-      ansible.builtin.command: "grep -E '^{{ docker_service_user }}:' /etc/{{ item }}"
+    # Reading the files rather than getsubids, which is newer than Debian 12.
+    # Overlap is the point: two accounts mapping the same outer ids does not make
+    # newuidmap fail, it just means one can touch the files the other creates.
+    - name: Stat the subordinate id files
+      ansible.builtin.stat:
+        path: "/etc/{{ item }}"
       loop:
         - subuid
         - subgid
-      register: docker_subid
-      changed_when: false
+      register: docker_subid_files
 
-    - name: Assert the service user has subordinate ids
+    - name: Assert useradd wrote both subordinate id files
       ansible.builtin.assert:
-        that: docker_subid.results | map(attribute='stdout') | map('trim') | map('length') | min > 0
+        that: docker_subid_files.results | selectattr('stat.exists') | list | length == 2
+
+    # The file is passed twice: the first pass records the service user's range,
+    # the second compares every other entry against it.
+    - name: Check the service user's range against every other entry
+      ansible.builtin.shell: |
+        awk -F: -v u='{{ docker_service_user }}' -v uid='{{ docker_service_uid }}' '
+          NR == FNR {
+            if ($1 == u || $1 == uid) {
+              seen = 1
+              lo = $2
+              hi = $2 + $3
+            }
+            next
+          }
+          seen && $1 != u && $1 != uid && $2 < hi && lo < $2 + $3 {
+            printf "%s:%s:%s overlaps %s\n", $1, $2, $3, u
+            bad = 1
+          }
+          END {
+            if (!seen) { print "no range for " u; exit 2 }
+            exit bad
+          }
+        ' /etc/{{ item }} /etc/{{ item }}
+      args:
+        executable: /bin/bash
+      loop:
+        - subuid
+        - subgid
+      register: docker_subid_check
+      changed_when: false
+      failed_when: false
+
+    - name: Assert the subordinate id range is present and does not overlap
+      vars:
+        subid_errors: >-
+          {{ docker_subid_check.results | rejectattr('rc', 'equalto', 0)
+             | map(attribute='stdout') | select | join('; ') }}
+      ansible.builtin.assert:
+        that: docker_subid_check.results | map(attribute='rc') | unique == [0]
+        fail_msg: "subordinate id check failed: {{ subid_errors }}"

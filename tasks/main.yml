@@ -144,12 +144,12 @@
 - name: Fail when the service user has no subordinate id range
   ansible.builtin.assert:
     that: docker_subid.results | map(attribute='stdout') | map('trim') | map('length') | min > 0
-    when: not ansible_check_mode
     fail_msg: >-
       {{ docker_service_user }} has no subordinate id range in /etc/subuid and
       /etc/subgid, so rootlesskit cannot create its user namespace. Allocate one
       with `usermod --add-subuids 100000-165535 --add-subgids 100000-165535
       {{ docker_service_user }}`.
+  when: not ansible_check_mode
 
 # `sudo -iu service` starts a login shell but not a login session, so nothing
 # sets XDG_RUNTIME_DIR and `systemctl --user` cannot find the per-user bus.
