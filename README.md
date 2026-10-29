@@ -27,6 +27,7 @@ Defined in `defaults/main.yml`:
 | `docker_subid_start` | `165536` | first id of the subordinate range |
 | `docker_subid_count` | `65536` | |
 | `docker_unprivileged_port_start` | `0` | lowest port the daemon may publish; `0` allows 80/443 |
+| `docker_max_user_namespaces` | `15000` | `user.max_user_namespaces` where AppArmor does not scope user namespaces |
 | `docker_apt_repo_url` | `https://download.docker.com/linux/<distro>` | `ubuntu` or `debian` |
 | `docker_apt_key_url` | `https://download.docker.com/linux/<distro>/gpg` | |
 | `docker_packages_state` | `latest` | `latest` or `present`, see below |
@@ -101,16 +102,13 @@ The role exports `XDG_RUNTIME_DIR` from the service user's `.bashrc` because
 `sudo -iu` gives a login shell but not a login session, and without it
 `systemctl --user` fails with `Failed to connect to bus: No medium found`.
 
-## AppArmor note
+## Unprivileged user namespaces
 
-Ubuntu 24.04 and later set `kernel.apparmor_restrict_unprivileged_userns=1`, which
-prevents `rootlesskit` from creating its user namespace. The role installs
-`/etc/apparmor.d/usr.bin.rootlesskit` when that sysctl is `1` and the host's AppArmor
-provides `abi/4.0` — the `userns` rule does not exist in 3.0.
+Where AppArmor restricts unprivileged user namespaces (Ubuntu 24.04+), the role installs
+`/etc/apparmor.d/usr.bin.rootlesskit`, and fails if the host lacks apparmor >= 4.0.
 
-The sysctl is Ubuntu-only. Upstream took per-profile `userns` mediation in 6.7 but not
-the denial of unconfined processes or the sysctl that enables it,
-Debian leaves unprivileged user namespaces unrestricted and needs no profile.
+Elsewhere it sets `user.max_user_namespaces={{ docker_max_user_namespaces }}` and, where
+present, `kernel.unprivileged_userns_clone=1`.
 
 ## Tests
 

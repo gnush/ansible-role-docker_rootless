@@ -167,15 +167,26 @@
   register: docker_userns_restrict
   failed_when: false
 
+- name: Record whether AppArmor restricts unprivileged user namespaces
+  ansible.builtin.set_fact:
+    docker_userns_restricted: "{{ docker_userns_restrict.content | default('') | b64decode | trim == '1' }}"
+
 - name: Check the AppArmor ABI the profile is written against
   ansible.builtin.stat:
     path: /etc/apparmor.d/abi/4.0
   register: docker_apparmor_abi
 
+# The `userns` rule needs abi/4.0, which Ubuntu 24.04+ ships with apparmor >= 4.0.
+- name: Fail when the AppArmor restriction cannot be scoped to rootlesskit
+  ansible.builtin.assert:
+    that: docker_apparmor_abi.stat.exists
+    fail_msg: >-
+      AppArmor restricts unprivileged user namespaces on this host, but has no
+      abi/4.0, so the rootlesskit profile cannot be written. Install apparmor >= 4.0.
+  when: docker_userns_restricted | bool
+
 # Ubuntu 24.04+ confines unprivileged user namespaces. Without this profile
 # rootlesskit cannot create its namespace and dockerd never starts.
-# The `userns` rule and abi/4.0 need AppArmor >= 4.0, which docker-ce pulls in
-# on 24.04+; a host with an older AppArmor could not parse the profile.
 - name: Allow rootlesskit to create user namespaces (AppArmor)
   ansible.builtin.copy:
     dest: /etc/apparmor.d/usr.bin.rootlesskit
@@ -188,10 +199,36 @@
         userns,
         include if exists <local/usr.bin.rootlesskit>
       }
-  when:
-    - docker_userns_restrict.content | default('') | b64decode | trim == '1'
-    - docker_apparmor_abi.stat.exists
+  when: docker_userns_restricted | bool
   notify: Restart apparmor
+
+# Elsewhere nothing scopes the permission to one binary, so it has to be granted
+# host-wide. Both knobs default to permissive; a hardened host at 0 is overridden
+# because rootlesskit cannot start without a user namespace.
+- name: Allow unprivileged user namespaces
+  ansible.posix.sysctl:
+    name: user.max_user_namespaces
+    value: "{{ docker_max_user_namespaces }}"
+    sysctl_file: /etc/sysctl.d/50-unprivileged-userns.conf
+    sysctl_set: true
+    reload: true
+  when: not docker_userns_restricted | bool
+
+- name: Read the Debian-specific unprivileged user namespace knob
+  ansible.builtin.stat:
+    path: /proc/sys/kernel/unprivileged_userns_clone
+  register: docker_userns_clone
+
+- name: Allow unprivileged user namespaces (Debian-specific knob, when present)
+  ansible.posix.sysctl:
+    name: kernel.unprivileged_userns_clone
+    value: "1"
+    sysctl_file: /etc/sysctl.d/50-unprivileged-userns.conf
+    sysctl_set: true
+    reload: true
+  when:
+    - not docker_userns_restricted | bool
+    - docker_userns_clone.stat.exists
 
 - name: Apply pending AppArmor changes before starting the daemon
   ansible.builtin.meta: flush_handlers

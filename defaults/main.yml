@@ -13,6 +13,10 @@ docker_subid_count: 65536
 # First (transport) port the rootless daemon can publish
 docker_unprivileged_port_start: 0
 
+# Only used where AppArmor does not restrict unprivileged user namespaces, i.e.
+# everywhere but Ubuntu 24.04+. A host at 0 forbids user namespaces host-wide.
+docker_max_user_namespaces: 15000
+
 docker_apt_repo_url: "https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}"
 docker_apt_key_url: "https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}/gpg"
 
