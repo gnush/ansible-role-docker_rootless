@@ -4,8 +4,8 @@ docker_service_group: service
 docker_service_home: "/home/{{ docker_service_user }}"
 docker_service_shell: /bin/bash
 
-# First (transport) port the rootless daemon can publish
-docker_unprivileged_port_start: 0
+# First port any unprivileged process may bind, host-wide
+docker_unprivileged_port_start: 1024
 
 # Only used where AppArmor does not restrict unprivileged user namespaces, i.e.
 # everywhere but Ubuntu 24.04+. A host at 0 forbids user namespaces host-wide.

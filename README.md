@@ -23,8 +23,8 @@ Defined in `defaults/main.yml`:
 | `docker_service_group` | `service` | |
 | `docker_service_home` | `/home/{{ docker_service_user }}` | |
 | `docker_service_shell` | `/bin/bash` | |
-| `docker_unprivileged_port_start` | `0` | lowest port the daemon may publish; `0` allows 80/443 |
-| `docker_max_user_namespaces` | `15000` | `user.max_user_namespaces` where AppArmor does not scope user namespaces |
+| `docker_unprivileged_port_start` | `1024` | lowest port any unprivileged process may bind; see below |
+| `docker_max_user_namespaces` | `15000` | exact value, lowers a host tuned higher; see below |
 | `docker_apt_repo_url` | `https://download.docker.com/linux/<distro>` | `ubuntu` or `debian` |
 | `docker_apt_key_url` | `https://download.docker.com/linux/<distro>/gpg` | |
 | `docker_packages_state` | `latest` | `latest` or `present`, see below |
@@ -96,6 +96,12 @@ The role exports `XDG_RUNTIME_DIR` from the service user's `.bashrc` because
 `sudo -iu` gives a login shell but not a login session, and without it
 `systemctl --user` fails with `Failed to connect to bus: No medium found`.
 
+## Unprivileged ports
+
+`docker_unprivileged_port_start` is written to `/etc/sysctl.d/50-unprivileged-ports.conf`
+as `net.ipv4.ip_unprivileged_port_start`. It is not scoped to Docker: it applies to every
+unprivileged process on the host, and the file outlives the role.
+
 ## Unprivileged user namespaces
 
 Where AppArmor restricts unprivileged user namespaces (Ubuntu 24.04+), the role installs
@@ -103,6 +109,14 @@ Where AppArmor restricts unprivileged user namespaces (Ubuntu 24.04+), the role 
 
 Elsewhere it sets `user.max_user_namespaces={{ docker_max_user_namespaces }}` and, where
 present, `kernel.unprivileged_userns_clone=1`.
+
+The namespace count is written as an exact value, not a floor. `15000` is the stock
+Debian and Ubuntu kernel default, so on an untouched host the write changes nothing, but a
+host tuned higher (say `100000` for a busy CI runner) is **lowered** on the next run, to
+the value in `/etc/sysctl.d/50-unprivileged-userns.conf`. Set
+`docker_max_user_namespaces` in `group_vars/` to at least the host's current value before
+applying the role to such a host. The limit is per uid: every user namespace that user
+opens counts against it, not only the ones the daemon creates.
 
 ## Tests
 
