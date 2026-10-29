@@ -4,6 +4,13 @@
   vars_files:
     - "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/defaults/main.yml"
     - "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/vars/main.yml"
+  pre_tasks:
+    # Mirrors converge.yml: its vars do not reach this playbook, and
+    # vars_files outranks play vars, so a set_fact is the only thing that beats
+    # the default read above.
+    - name: Use the port driver converge applied
+      ansible.builtin.set_fact:
+        docker_port_driver: slirp4netns
   tasks:
     - name: Populate service facts
       ansible.builtin.service_facts:
@@ -71,6 +78,33 @@
         that:
           - docker_user_unit.status.ActiveState == 'active'
           - docker_user_unit.status.UnitFileState == 'enabled'
+
+    # The drop-in existing proves the role wrote it; Environment on the unit
+    # proves systemd applied it to the process the daemon runs in.
+    - name: Stat the port driver drop-in
+      ansible.builtin.stat:
+        path: "{{ docker_service_home }}/.config/systemd/user/docker.service.d/port-driver.conf"
+      register: docker_port_driver_dropin
+
+    - name: Read the port driver the unit runs with  # noqa: command-instead-of-module
+      become: true
+      become_user: "{{ docker_service_user }}"
+      environment: "{{ docker_user_env }}"
+      # systemd_service reports no Environment property, so the module cannot
+      # answer this.
+      ansible.builtin.command: systemctl --user show docker.service --property=Environment
+      register: docker_port_driver_env
+      changed_when: false
+      check_mode: false
+
+    - name: Assert the port driver is configured
+      ansible.builtin.assert:
+        that:
+          - docker_port_driver_dropin.stat.exists
+          - ("DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=" ~ docker_port_driver) in docker_port_driver_env.stdout
+        fail_msg: >-
+          {{ docker_port_driver }} not applied; unit has
+          {{ docker_port_driver_env.stdout }}
 
     - name: Check the daemon reports itself rootless
       become: true

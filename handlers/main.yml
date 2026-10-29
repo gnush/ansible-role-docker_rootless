@@ -11,4 +11,6 @@
   ansible.builtin.systemd_service:
     name: docker.service
     scope: user
+    # the reload picks up the drop-in, the restart the daemon config.
+    daemon_reload: true
     state: restarted

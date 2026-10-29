@@ -288,6 +288,55 @@
     mode: "0664"
   notify: Restart rootless docker
 
+# --------------------------------------------------------------------------
+# Rootlesskit port driver
+# --------------------------------------------------------------------------
+
+- name: Fail on an unknown port driver
+  ansible.builtin.assert:
+    that: docker_port_driver in docker_port_driver_known
+    fail_msg: >-
+      docker_port_driver is {{ docker_port_driver }}, which rootlesskit does not
+      accept. Choose one of {{ docker_port_driver_known | join(', ') }}.
+
+- name: Install passt for the pasta port driver
+  ansible.builtin.apt:
+    name: passt
+    state: present
+  when: docker_port_driver == 'pasta'
+
+# A drop-in rather than an edit of the unit: the setuptool owns docker.service
+# and rewrites it on install.
+- name: Create the rootless daemon drop-in directory
+  ansible.builtin.file:
+    path: "{{ docker_service_home }}/.config/systemd/user/docker.service.d"
+    state: directory
+    owner: "{{ docker_service_user }}"
+    group: "{{ docker_service_group }}"
+    mode: "0755"
+  when: docker_port_driver != 'builtin'
+
+- name: Write the port driver drop-in
+  ansible.builtin.copy:
+    dest: "{{ docker_service_home }}/.config/systemd/user/docker.service.d/port-driver.conf"
+    content: |
+      [Service]
+      Environment="DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER={{ docker_port_driver }}"
+    owner: "{{ docker_service_user }}"
+    group: "{{ docker_service_group }}"
+    mode: "0644"
+  when: docker_port_driver != 'builtin'
+  notify: Restart rootless docker
+
+# Switching back to builtin has to remove the drop-in explicitly; leaving it
+# would keep a driver the variable no longer names.
+- name: Remove the port driver drop-in
+  ansible.builtin.file:
+    path: "{{ docker_service_home }}/.config/systemd/user/docker.service.d/port-driver.conf"
+    state: absent
+  when: docker_port_driver == 'builtin'
+  notify: Restart rootless docker
+
 - name: Enable and start the rootless daemon
   become: true
   become_user: "{{ docker_service_user }}"

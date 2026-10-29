@@ -7,6 +7,8 @@
       storage-driver: vfs
     # setuptool checks /lib/modules for nf_tables; a container has none.
     docker_setuptool_args: [--skip-iptables]
+    # Not the default: the drop-in is only written for a non-builtin driver.
+    docker_port_driver: slirp4netns
   pre_tasks:
     # Rootless dockerd hardcodes /sys/fs/cgroup/user.slice, but under
     # cgroupns_mode: host this container's user.slice lives under

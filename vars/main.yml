@@ -8,6 +8,13 @@ docker_apt_arch_map:
   ppc64le: ppc64el
   s390x: s390x
 
+# Internal: the port drivers rootlesskit accepts, so an unknown value fails the
+# run instead of the daemon at restart.
+docker_port_driver_known:
+  - builtin
+  - slirp4netns
+  - pasta
+
 # Derived from the uid `docker_service_user` gets from the system, so an
 # inventory variable must not be able to point them elsewhere. Role vars
 # outrank host_vars/group_vars; `docker_service_uid` comes from tasks/main.yml.

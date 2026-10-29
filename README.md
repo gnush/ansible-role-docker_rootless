@@ -30,6 +30,7 @@ Defined in `defaults/main.yml`:
 | `docker_packages_state` | `latest` | `latest` or `present`, see below |
 | `docker_packages` | `docker-ce`, `-cli`, `-rootless-extras`, `containerd.io`, `-buildx-plugin`, `-compose-plugin` | |
 | `docker_daemon_config` | `{}` | contents of the service user's `~/.config/docker/daemon.json` |
+| `docker_port_driver` | `builtin` | `builtin`, `slirp4netns` or `pasta`; see below |
 | `docker_setuptool_args` | `[]` | extra arguments for `dockerd-rootless-setuptool.sh install` |
 
 The role keeps the `docker_*` prefix rather than `docker_rootless_*`: the vocabulary
@@ -143,6 +144,30 @@ the target is a container, not a host:
 
 None of these apply to a real host; they are not role defaults.
 
+## Published ports and client IPs
+
+`docker run -p` goes through rootlesskit's port driver, chosen by
+`docker_port_driver`. The role writes
+`~/.config/systemd/user/docker.service.d/port-driver.conf` when the value is not
+`builtin`, and removes it when it is.
+
+| Driver | Client IP | Cost |
+|---|---|---|
+| `builtin` | lost, every connection appears to come from the rootlesskit gateway | none; default |
+| `slirp4netns` | preserved | roughly −60% HTTPS download and −25% upload, published ports read from the host ~5× slower; IPv4 only, no IPv6 |
+| `pasta` | preserved | near-native throughput |
+
+Nothing is lost by keeping `builtin` unless something behind a published port
+distinguishes clients by address, an IP allow-list in a reverse proxy, for
+instance. Then `slirp4netns` is the safe choice and `pasta` the fast one.
+
+**Changing the driver restarts the daemon, which stops every container on the
+host.** The handler runs at the end of the role; a driver change on a live host
+belongs in a maintenance window.
+
+`pasta` was not checked against host-IP bindings: if it ignores `127.0.0.1:` in a
+`-p` spec, a published dashboard bound that way becomes reachable from outside.
+
 ## Known limitations of rootless mode
 
 - No `--privileged`, no AppArmor profiles on containers, no arbitrary `--cap-add`
@@ -150,5 +175,3 @@ None of these apply to a real host; they are not role defaults.
 - Resource limits need cgroup v2 and systemd.
 - The `IPAddress` in `docker inspect` is inside the rootlesskit network namespace and
   is not reachable from the host without `nsenter`.
-- `docker run -p` does not preserve the client source address by default. See
-  `TODO.md` for the port-driver options and what each costs.

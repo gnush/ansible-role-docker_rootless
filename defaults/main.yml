@@ -28,6 +28,11 @@ docker_packages:
 # Contents of ~/.config/docker/daemon.json for the service user.
 docker_daemon_config: {}
 
+# Rootlesskit port driver. `builtin` rewrites the source address of every
+# forwarded connection; `slirp4netns` and `pasta` preserve client IPs at a
+# throughput cost.
+docker_port_driver: builtin
+
 # Extra arguments for `dockerd-rootless-setuptool.sh install`. Tests pass
 # --skip-iptables: the setuptool checks /lib/modules for nf_tables, which a
 # container does not have.
