@@ -1,8 +1,6 @@
 ---
 docker_service_user: service
 docker_service_group: service
-docker_service_uid: 1001
-docker_service_gid: 1001
 docker_service_home: "/home/{{ docker_service_user }}"
 docker_service_shell: /bin/bash
 
@@ -38,12 +36,3 @@ docker_daemon_config: {}
 # --skip-iptables: the setuptool checks /lib/modules for nf_tables, which a
 # container does not have.
 docker_setuptool_args: []
-
-# Environment every command run *as the service user* needs so that it talks to
-# the per-user systemd manager and the rootless daemon socket.
-docker_user_runtime_dir: "/run/user/{{ docker_service_uid }}"
-docker_user_env:
-  XDG_RUNTIME_DIR: "{{ docker_user_runtime_dir }}"
-  DBUS_SESSION_BUS_ADDRESS: "unix:path={{ docker_user_runtime_dir }}/bus"
-  DOCKER_HOST: "unix://{{ docker_user_runtime_dir }}/docker.sock"
-  PATH: /usr/bin:/sbin:/usr/sbin:/usr/local/sbin:/usr/local/bin:/bin

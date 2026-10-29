@@ -61,9 +61,12 @@ jobs:
         run: |
           docker exec ${{ matrix.platform }} cat /proc/1/cgroup || true
           docker exec ${{ matrix.platform }} mount | grep cgroup || true
-          docker exec -u service -e XDG_RUNTIME_DIR=/run/user/1001 \
-            -e DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus \
+          # The role lets the system pick the uid, so read it rather than assuming.
+          uid=$(docker exec ${{ matrix.platform }} id -u service 2>/dev/null) || {
+            echo "no service user on ${{ matrix.platform }}"; exit 0; }
+          docker exec -u service -e XDG_RUNTIME_DIR=/run/user/$uid \
+            -e DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus \
             ${{ matrix.platform }} systemctl --user status docker --no-pager || true
-          docker exec -u service -e XDG_RUNTIME_DIR=/run/user/1001 \
-            -e DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus \
+          docker exec -u service -e XDG_RUNTIME_DIR=/run/user/$uid \
+            -e DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus \
             ${{ matrix.platform }} journalctl --user -u docker --no-pager || true

@@ -21,7 +21,6 @@ Defined in `defaults/main.yml`:
 |---|---|---|
 | `docker_service_user` | `service` | user the rootless daemon runs as |
 | `docker_service_group` | `service` | |
-| `docker_service_uid` / `_gid` | `1001` | |
 | `docker_service_home` | `/home/{{ docker_service_user }}` | |
 | `docker_service_shell` | `/bin/bash` | |
 | `docker_subid_start` | `165536` | first id of the subordinate range |
@@ -34,16 +33,16 @@ Defined in `defaults/main.yml`:
 | `docker_packages` | `docker-ce`, `-cli`, `-rootless-extras`, `containerd.io`, `-buildx-plugin`, `-compose-plugin` | |
 | `docker_daemon_config` | `{}` | contents of the service user's `~/.config/docker/daemon.json` |
 | `docker_setuptool_args` | `[]` | extra arguments for `dockerd-rootless-setuptool.sh install` |
-| `docker_user_runtime_dir` | `/run/user/{{ docker_service_uid }}` | |
-| `docker_user_env` | derived | environment for commands run as the service user |
 
 The role keeps the `docker_*` prefix rather than `docker_rootless_*`: the vocabulary
 is shared with a runner role that mounts this daemon's socket, and prefixing it per
 role would break the one thing they have in common.
 
-`docker_user_env` is used as `environment:` on every task that talks to the per-user
-systemd manager. Overriding it without `XDG_RUNTIME_DIR` and `DBUS_SESSION_BUS_ADDRESS`
-makes those tasks fail at connection, not at validation.
+The service user gets whatever uid and gid the system allocates, so a host where a
+fixed id is already taken does not fail. The uid is set as the fact
+`docker_service_uid` once the user exists. `docker_user_runtime_dir` and
+`docker_user_env` derive from it and live in `vars/main.yml`: role vars outrank
+inventory, so they cannot be pointed at a directory the daemon does not use.
 
 ## Example Playbook
 

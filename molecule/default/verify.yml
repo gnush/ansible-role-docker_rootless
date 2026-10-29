@@ -3,9 +3,21 @@
   hosts: all
   vars_files:
     - "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/defaults/main.yml"
+    - "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/vars/main.yml"
   tasks:
     - name: Populate service facts
       ansible.builtin.service_facts:
+
+    # The role lets the system pick the uid, and `docker_user_env` derives from
+    # it, so read the assigned id rather than a default.
+    - name: Read the uid the system assigned to the service user
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ docker_service_user }}"
+
+    - name: Record the service user's uid
+      ansible.builtin.set_fact:
+        docker_service_uid: "{{ getent_passwd[docker_service_user][1] }}"
 
     # The host kernel is already permissive, so a working daemon does not prove
     # the role's userns branch ran. Check what it wrote instead.
@@ -78,7 +90,7 @@
       ansible.builtin.assert:
         that:
           - docker_sock.stat.exists
-          - docker_sock.stat.uid == docker_service_uid
+          - docker_sock.stat.uid | int == docker_service_uid | int
 
     - name: Pull and run a container as the service user
       become: true

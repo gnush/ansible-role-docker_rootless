@@ -99,21 +99,28 @@
 # Service user
 # --------------------------------------------------------------------------
 
+# No fixed uid/gid: the system allocates them, so a host where the id is taken
+# does not fail. Later tasks read the fact set below instead of assuming one.
 - name: Create service group
   ansible.builtin.group:
     name: "{{ docker_service_group }}"
-    gid: "{{ docker_service_gid }}"
     state: present
 
 - name: Create service user
   ansible.builtin.user:
     name: "{{ docker_service_user }}"
-    uid: "{{ docker_service_uid }}"
     group: "{{ docker_service_group }}"
     home: "{{ docker_service_home }}"
     shell: "{{ docker_service_shell }}"
     create_home: true
     state: present
+  register: docker_service_user_result
+
+# The user module reports uid on an unchanged run too, so a rerun re-reads the
+# assigned id instead of renumbering the account.
+- name: Record the uid the system allocated
+  ansible.builtin.set_fact:
+    docker_service_uid: "{{ docker_service_user_result.uid }}"
 
 # `sudo -iu service` starts a login shell but not a login session, so nothing
 # sets XDG_RUNTIME_DIR and `systemctl --user` cannot find the per-user bus.

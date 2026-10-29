@@ -7,3 +7,16 @@ docker_apt_arch_map:
   armv7l: armhf
   ppc64le: ppc64el
   s390x: s390x
+
+# Derived from the uid `docker_service_user` gets from the system, so an
+# inventory variable must not be able to point them elsewhere. Role vars
+# outrank host_vars/group_vars; `docker_service_uid` comes from tasks/main.yml.
+docker_user_runtime_dir: "/run/user/{{ docker_service_uid }}"
+
+# Environment every command run *as the service user* needs so that it talks to
+# the per-user systemd manager and the rootless daemon socket.
+docker_user_env:
+  XDG_RUNTIME_DIR: "{{ docker_user_runtime_dir }}"
+  DBUS_SESSION_BUS_ADDRESS: "unix:path={{ docker_user_runtime_dir }}/bus"
+  DOCKER_HOST: "unix://{{ docker_user_runtime_dir }}/docker.sock"
+  PATH: /usr/bin:/sbin:/usr/sbin:/usr/local/sbin:/usr/local/bin:/bin
