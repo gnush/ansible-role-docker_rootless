@@ -30,6 +30,8 @@ jobs:
         platform:
           - ubuntu2404
           - ubuntu2604
+          - debian12
+          - debian13
     steps:
       - uses: actions/checkout@v7
 
