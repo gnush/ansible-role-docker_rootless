@@ -18,6 +18,8 @@
         nest="/sys/fs/cgroup$(sed -n 's/^0::\(.*\)\/init.scope/\1/p' /proc/1/cgroup)/user.slice"
         mkdir -p /tmp/user-slice
         mount --bind "$nest" /tmp/user-slice
+        # systemd 255 does not create user.slice here; mount needs the path.
+        mkdir -p /sys/fs/cgroup/user.slice
         mount --bind /tmp/user-slice /sys/fs/cgroup/user.slice
       args:
         executable: /bin/bash
