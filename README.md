@@ -113,7 +113,7 @@ present, `kernel.unprivileged_userns_clone=1`.
 ## Tests
 
 `molecule test` runs on Ubuntu 24.04 and 26.04 and Debian 12 and 13 in a privileged
-container with `cgroupns_mode: host`. Four things in the scenario exist only because
+container with `cgroupns_mode: host`. Five things in the scenario exist only because
 the target is a container, not a host:
 
 - a bind mount of the container's nested `user.slice` over `/sys/fs/cgroup/user.slice`.
@@ -126,8 +126,12 @@ the target is a container, not a host:
   `nf_tables`, which a container does not have.
 - `/sys/kernel/security` mounted on the Ubuntu platforms only, so `apparmor.service`
   clears its `AssertPathIsReadWrite` and the `userns` profile can load. Without it the
-  AppArmor branch fails on the handler. Debian takes the sysctl branch and never
-  restarts apparmor.
+  AppArmor branch fails on the handler. Debian ships no `sysctl.d` file activating the
+  restriction, so it never reaches that branch.
+- the Debian containers clear `kernel.apparmor_restrict_unprivileged_userns`. The knob
+  is not namespaced, so they read the runner's kernel, and GitHub's Ubuntu runners set
+  it. On a real Debian host it is `0`; forcing it keeps the sysctl branch exercised
+  rather than every platform landing on the AppArmor one.
 
 None of these apply to a real host; they are not role defaults.
 

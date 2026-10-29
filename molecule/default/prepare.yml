@@ -6,3 +6,18 @@
     - name: Update apt cache
       ansible.builtin.apt:
         update_cache: true
+
+    # The knob is not namespaced, so the container reads the runner's kernel.
+    # GitHub's Ubuntu runners set it, which would put every platform on the
+    # AppArmor branch and leave the sysctl branch untested. Debian ships no
+    # sysctl.d file activating it, so it is 0 on a real Debian host.
+    - name: Unrestrict unprivileged user namespaces on Debian
+      ansible.posix.sysctl:
+        name: kernel.apparmor_restrict_unprivileged_userns
+        value: "0"
+        sysctl_file: /etc/sysctl.d/99-molecule-userns.conf
+        sysctl_set: true
+        reload: true
+      when:
+        - ansible_facts['distribution'] == 'Debian'
+        - "'/proc/sys/kernel/apparmor_restrict_unprivileged_userns' is exists"
