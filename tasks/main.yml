@@ -101,6 +101,9 @@
 
 # No fixed uid/gid: the system allocates them, so a host where the id is taken
 # does not fail. Later tasks read the fact set below instead of assuming one.
+# useradd also writes the subordinate range to /etc/subuid and /etc/subgid, from
+# SUB_UID_MIN=100000 in shadow's compiled-in defaults.
+# Writing our own range on top would let two accounts map the same outer ids.
 - name: Create service group
   ansible.builtin.group:
     name: "{{ docker_service_group }}"
@@ -134,17 +137,6 @@
     owner: "{{ docker_service_user }}"
     group: "{{ docker_service_group }}"
     mode: "0644"
-
-- name: Assign subordinate uid/gid range
-  ansible.builtin.lineinfile:
-    path: "/etc/{{ item }}"
-    regexp: "^{{ docker_service_user }}:"
-    line: "{{ docker_service_user }}:{{ docker_subid_start }}:{{ docker_subid_count }}"
-    create: true
-    mode: "0644"
-  loop:
-    - subuid
-    - subgid
 
 - name: Enable lingering so the daemon starts at boot without a login
   ansible.builtin.command: "loginctl enable-linger {{ docker_service_user }}"

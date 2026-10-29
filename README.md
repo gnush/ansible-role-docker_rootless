@@ -23,8 +23,6 @@ Defined in `defaults/main.yml`:
 | `docker_service_group` | `service` | |
 | `docker_service_home` | `/home/{{ docker_service_user }}` | |
 | `docker_service_shell` | `/bin/bash` | |
-| `docker_subid_start` | `165536` | first id of the subordinate range |
-| `docker_subid_count` | `65536` | |
 | `docker_unprivileged_port_start` | `0` | lowest port the daemon may publish; `0` allows 80/443 |
 | `docker_max_user_namespaces` | `15000` | `user.max_user_namespaces` where AppArmor does not scope user namespaces |
 | `docker_apt_repo_url` | `https://download.docker.com/linux/<distro>` | `ubuntu` or `debian` |
@@ -38,11 +36,8 @@ The role keeps the `docker_*` prefix rather than `docker_rootless_*`: the vocabu
 is shared with a runner role that mounts this daemon's socket, and prefixing it per
 role would break the one thing they have in common.
 
-The service user gets whatever uid and gid the system allocates, so a host where a
-fixed id is already taken does not fail. The uid is set as the fact
-`docker_service_uid` once the user exists. `docker_user_runtime_dir` and
-`docker_user_env` derive from it and live in `vars/main.yml`: role vars outrank
-inventory, so they cannot be pointed at a directory the daemon does not use.
+The service user gets whatever uid, gid and subordinate id range the system
+allocates, so a host where a fixed id is already taken does not fail.
 
 ## Example Playbook
 

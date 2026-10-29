@@ -17,7 +17,7 @@
 
     - name: Record the service user's uid
       ansible.builtin.set_fact:
-        docker_service_uid: "{{ getent_passwd[docker_service_user][1] }}"
+        docker_service_uid: "{{ ansible_facts['getent_passwd'][docker_service_user][1] }}"
 
     # The host kernel is already permissive, so a working daemon does not prove
     # the role's userns branch ran. Check what it wrote instead.
