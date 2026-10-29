@@ -18,6 +18,9 @@ jobs:
       - name: Install
         run: pip install ansible-core ansible-lint
 
+      - name: Install collections
+        run: ansible-galaxy collection install -r requirements.yml
+
       - name: Lint
         run: ansible-lint
 
@@ -41,6 +44,9 @@ jobs:
 
       - name: Install
         run: pip install ansible-core molecule molecule-plugins[docker]
+
+      - name: Install collections
+        run: ansible-galaxy collection install -r requirements.yml
 
       - name: Molecule
         run: molecule test --platform-name ${{ matrix.platform }} --destroy never
