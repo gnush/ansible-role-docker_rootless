@@ -6,9 +6,9 @@ daemon as a systemd user unit.
 
 ## Requirements
 
-- Ubuntu >= 24.04
-- `x86_64`, `aarch64`, `armv7l`, `ppc64le` or `s390x` — the architectures Docker
-  publishes an apt repository for
+- Ubuntu >= 24.04  
+  Debian >= 12
+- `x86_64`, `aarch64`, `armv7l`, `ppc64le` or `s390x` (Docker publishes an apt repository for these)
 - Ansible >= 2.15 (`deb822_repository`)
 - `ansible.posix` collection (sysctl)
 - Root privileges (`become: true`)
@@ -27,8 +27,8 @@ Defined in `defaults/main.yml`:
 | `docker_subid_start` | `165536` | first id of the subordinate range |
 | `docker_subid_count` | `65536` | |
 | `docker_unprivileged_port_start` | `0` | lowest port the daemon may publish; `0` allows 80/443 |
-| `docker_apt_repo_url` | `https://download.docker.com/linux/ubuntu` | |
-| `docker_apt_key_url` | `https://download.docker.com/linux/ubuntu/gpg` | |
+| `docker_apt_repo_url` | `https://download.docker.com/linux/<distro>` | `ubuntu` or `debian` |
+| `docker_apt_key_url` | `https://download.docker.com/linux/<distro>/gpg` | |
 | `docker_packages_state` | `latest` | `latest` or `present`, see below |
 | `docker_packages` | `docker-ce`, `-cli`, `-rootless-extras`, `containerd.io`, `-buildx-plugin`, `-compose-plugin` | |
 | `docker_daemon_config` | `{}` | contents of the service user's `~/.config/docker/daemon.json` |
@@ -103,10 +103,14 @@ The role exports `XDG_RUNTIME_DIR` from the service user's `.bashrc` because
 
 ## AppArmor note
 
-24.04 and later set `kernel.apparmor_restrict_unprivileged_userns=1`, which prevents
-`rootlesskit` from creating its user namespace. The role installs
+Ubuntu 24.04 and later set `kernel.apparmor_restrict_unprivileged_userns=1`, which
+prevents `rootlesskit` from creating its user namespace. The role installs
 `/etc/apparmor.d/usr.bin.rootlesskit` when that sysctl is `1` and the host's AppArmor
 provides `abi/4.0` — the `userns` rule does not exist in 3.0.
+
+The sysctl is Ubuntu-only. Upstream took per-profile `userns` mediation in 6.7 but not
+the denial of unconfined processes or the sysctl that enables it,
+Debian leaves unprivileged user namespaces unrestricted and needs no profile.
 
 ## Tests
 
