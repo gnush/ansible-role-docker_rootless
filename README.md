@@ -48,13 +48,22 @@ allocates, so a host where a fixed id is already taken does not fail.
   roles:
     - role: docker_rootless
       docker_daemon_config:
+        # subnets Docker creates its networks in, clear of internal networks the host has to reach
         default-address-pools:
           - base: 172.26.128.0/17
             size: 24
+        log-driver: local
+        log-opts:
+          max-size: 10m
 ```
 
-A consumer that adds a runtime (GPU hosts, for example) passes it through
-`docker_daemon_config`; this role is the only writer of `daemon.json`.
+`docker_daemon_config` is a YAML dict using the keys from Docker's
+[`daemon.json` reference](https://docs.docker.com/reference/cli/dockerd/#daemon-configuration-file).
+
+A change to `daemon.json` restarts the daemon, which stops every container on the
+host. A changed `default-address-pools` only applies to networks created
+afterwards; existing networks, Compose project networks included, keep their
+subnets until they are recreated.
 
 ## Docker package upgrades
 
