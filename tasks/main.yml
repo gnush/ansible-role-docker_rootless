@@ -305,6 +305,12 @@
     state: present
   when: docker_port_driver == 'pasta'
 
+- name: Install slirp4netns for the slirp4netns port driver
+  ansible.builtin.apt:
+    name: slirp4netns
+    state: present
+  when: docker_port_driver == 'slirp4netns'
+
 # A drop-in rather than an edit of the unit: the setuptool owns docker.service
 # and rewrites it on install.
 - name: Create the rootless daemon drop-in directory
